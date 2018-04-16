@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/auth0/go-jwt-middleware"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 )
@@ -14,6 +17,7 @@ func main() {
 	// Here we are instantiating the gorilla/mux router
 	r := mux.NewRouter()
 
+	r.Handle("/get-token", GetTokenHandler).Methods("GET")
 	// On the default page we will simply serve our static index page.
 	r.Handle("/", http.FileServer(http.Dir("./views/")))
 	// We will setup our server so we can serve static assest like images, css from the /static/{file} route
@@ -24,8 +28,8 @@ func main() {
 	// /products - which will retrieve a list of products that the user can leave feedback on
 	// /products/{slug}/feedback - which will capture user feedback on products
 	r.Handle("/status", StatusHandler).Methods("GET")
-	r.Handle("/products", ProductsHandler).Methods("GET")
-	r.Handle("/products/{slug}/feedback", AddFeedbackHandler).Methods("POST")
+	r.Handle("/products", jwtMiddleware.Handler(ProductsHandler)).Methods("GET")
+	r.Handle("/products/{slug}/feedback", jwtMiddleware.Handler(AddFeedbackHandler)).Methods("POST")
 
 	// Wrap the LoggingHandler function around our router so that the logger is called first on each route request
 	http.ListenAndServe(":3000", handlers.LoggingHandler(os.Stdout, r))
@@ -38,7 +42,7 @@ var NotImplemented = http.HandlerFunc(func(w http.ResponseWriter, r *http.Reques
 })
 
 // Product : We will first create a new type called Product
-//  This type will contain information about boardgames */
+//  This type will contain information about boardgames
 type Product struct {
 	ID          int
 	Name        string
@@ -60,6 +64,36 @@ var products = []Product{
 //  It will simply return a string with the message "API is up and running"
 var StatusHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("API is up and running"))
+})
+
+var mySigningKey = []byte("secret")
+
+// GetTokenHandler :
+var GetTokenHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Create the token
+	token := jwt.New(jwt.SigningMethodHS256)
+
+	// Create a map to store our claims
+	claims := token.Claims.(jwt.MapClaims)
+
+	// set token claims
+	claims["admin"] = true
+	claims["name"] = "Ado Kukic"
+	claims["exp"] = time.Now().Add(time.Hour * 24).Unix()
+
+	// sign the token with our secret
+
+	tokenString, _ := token.SignedString(mySigningKey)
+
+	// write token to browser window
+	w.Write([]byte(tokenString))
+})
+
+var jwtMiddleware = jwtmiddleware.New(jwtmiddleware.Options{
+	ValidationKeyGetter: func(token *jwt.Token) (interface{}, error) {
+		return mySigningKey, nil
+	},
+	SigningMethod: jwt.SigningMethodHS256,
 })
 
 // ProductsHandler : The products handler will be called when the user makes a GET request to the /products endpoint.
